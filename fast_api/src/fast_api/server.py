@@ -59,6 +59,54 @@ async def get_table_schema_from_bigquery(project_id: str, dataset_id: str, table
     schema = {field.name: field.field_type for field in table.schema}
     return {"schema": schema}
 
+@app.get("/create_logistic_reg_model_by_bigquery_ml/{model_name}/{project_id}/{dataset_id}/{train_table_id}/{target_variable}", operation_id="create_logistic_reg_model_by_bigquery_ml")
+async def create_logistic_reg_model_by_bigquery_ml(model_name: str, project_id: str, dataset_id: str, train_table_id: str, target_variable: str):
+    
+    # Execute the query
+    query = f"""
+        CREATE OR REPLACE MODEL `{project_id}.{dataset_id}.{model_name}`
+        OPTIONS(
+          model_type='logistic_reg'
+        ) AS
+        SELECT
+          {target_variable} as label,
+          * except({target_variable})
+        FROM
+          `{project_id}.{dataset_id}.{train_table_id}`
+    """
+    
+    query_job = client.query(query)
+    # Wait for the job to complete
+    query_job.result()
+    
+    return {"model_name": model_name, "status": "Model created successfully"}
+
+@app.get("/predict_by_bigquery_ml/{model_name}/{project_id}/{dataset_id}/{test_table_id}/{id}/{limit}", operation_id="predict_by_bigquery_ml")
+async def predict_by_bigquery_ml(model_name: str, project_id: str, dataset_id: str, test_table_id: str, id: str, limit: int):
+
+    # Execute the query
+    query = f"""
+        SELECT
+            {id} as id,
+            predicted_label
+        FROM
+            ML.PREDICT(MODEL `{project_id}.{dataset_id}.{model_name}`, (
+            SELECT
+                *
+            FROM
+                `{project_id}.{dataset_id}.{test_table_id}`
+            ))
+        ORDER BY
+            id
+        LIMIT {limit}
+    """
+    
+    query_job = client.query(query)
+    # Wait for the job to complete
+    results = query_job.result()
+    
+    return {"predictions": [dict(row) for row in results]}
+
 # Add the MCP server to your FastAPI app
 mcp = FastApiMCP(
     app,  
